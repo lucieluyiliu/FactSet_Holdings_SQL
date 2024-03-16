@@ -616,7 +616,7 @@ FROM work.inst_quarter_mf a, work.inst_quarter_13f b
 WHERE a.factset_entity_id = b.factset_entity_id AND a.quarter = b.quarter;
 
 CREATE TABLE work.v1_holdingsall AS
-SELECT factset_entity_id, fsym_id, quarter, max(io_sec) as io_sec, max(dollarholding) as dollarholding,
+SELECT factset_entity_id, fsym_id, quarter, max(io_sec) as io_sec, max(io_firm) as io_firm, max(dollarholding) as dollarholding,
 max(adj_holding) as adj_holding,
 adj_price
 
@@ -640,3 +640,101 @@ FROM (
 	AND a.quarter = c.quarter AND b.fsym_id = c.fsym_id
 		) t1
 GROUP BY factset_entity_id, fsym_id, quarter, adj_price;
+
+/*Adjustment factors of security-level and firm-level IO such that aggregate IO le 1*/
+
+/*security-level*/
+CREATE TABLE work.adjfactor_sec AS
+SELECT fsym_id, quarter, sum(io_sec) AS io_sec, GREATEST(SUM(io_sec), 1) AS adjf
+FROM work.v1_holdingsall
+GROUP BY fsym_id, quarter;
+
+/*firm-level*/
+CREATE TABLE work.adjfactor_firm AS
+SELECT b.factset_entity_id AS company_id, quarter, sum(io_firm) as io_firm,  GREATEST(sum(io_firm), 1) AS adjf
+FROM work.v1_holdingsall a, work.own_basic b
+WHERE a.fsym_id=b.fsym_id
+GROUP BY company_id, quarter;
+
+/*Make adjustment to security-level ownership, add firm-information and factset market cap*/
+
+CREATE TABLE work.v2_holdingsall_sec AS
+SELECT
+a.factset_entity_id, a.fsym_id,
+d.factset_entity_id AS company_id,
+a.quarter,
+e.iso_country AS inst_country,
+f.iso_country AS sec_country,
+e.entity_sub_type,
+ a.io_sec AS io_unadj,
+ a.io_sec/adjf AS io,
+ adj_holding/adjf AS adj_holding,
+ dollarholding/adjf AS dollarholding
+FROM work.v1_holdingsall a, work.adjfactor_sec b, work.sec_mktcap c, work.own_basic d,
+factset.edm_standard_entity e, factset.edm_standard_entity f
+WHERE a.fsym_id=b.fsym_id
+AND a.quarter=b.quarter
+AND a.fsym_id=c.fsym_id
+AND a.quarter=c.quarter
+AND a.fsym_id=d.fsym_id
+AND a.factset_entity_id=e.factset_entity_id
+AND d.factset_entity_id=f.factset_entity_id
+AND a.io_sec IS NOT NULL
+AND own_mktcap IS NOT NULL
+AND own_mktcap != 0
+AND d.factset_entity_id IS NOT NULL;
+
+CREATE TABLE work.v1_holdingsall_firm AS
+SELECT  a.factset_entity_id, b.factset_entity_id AS company_id, a.quarter,
+		c.iso_country AS inst_country, d.iso_country AS sec_country, c.entity_sub_type,
+		sum(a.io_firm) AS io, sum(dollarholding) AS dollarholding,
+        cat_institution,
+		CASE
+	      WHEN c.iso_country = 'US' THEN 'US'
+		  WHEN c.iso_country = 'GB' THEN 'UK'
+		  WHEN f.region LIKE '%Europe%' AND d.iso_country != 'UK' THEN 'Europe'
+		  ELSE 'Others'
+    END AS inst_origin
+FROM work.v1_holdingsall a, work.own_basic b,
+ factset.edm_standard_entity c,
+ factset.edm_standard_entity d,
+ work.inst_type e,
+ work.ctry f
+WHERE a.fsym_ID = b.fsym_ID
+AND   a.factset_entity_id = c.factset_entity_id
+AND   b.factset_entity_id = d.factset_entity_id
+AND   b.factset_entity_id IS NOT NULL
+AND a.io_firm IS NOT NULL
+AND c.entity_sub_type=e.entity_sub_type
+AND
+AND c.iso_country=f.iso
+GROUP BY a.factset_entity_id, b.factset_entity_id,
+a.quarter, c.iso_country, d.iso_country, c.entity_sub_type, cat_institution, inst_origin;
+
+/*Adjustment*/
+
+
+/*Apply firm-level adjustment factor */
+
+CREATE TABLE work.v2_holdingsall_firm AS
+SELECT a.factset_entity_id, a.company_id, a.quarter,a.inst_country, a.sec_country,
+a.entity_sub_type,
+a.io AS io_unadj,
+adjf,
+a.io/adjf as io,
+a.dollarholding/adjf AS dollarholding, a.cat_institution, a.inst_origin
+FROM work.v1_holdingsall_firm a, work.adjfactor_firm b
+WHERE a.company_id=b.company_id
+AND a.quarter=b.quarter;
+
+
+CREATE TABLE work.principal_security AS
+SELECT a.*
+FROM factset.sym_coverage a
+LEFT JOIN factset.own_sec_entity_eq b
+ON a.fsym_id = b.fsym_id
+WHERE b.factset_entity_id IN (SELECT DISTINCT company_id FROM work.v2_holdingsall_firm)
+AND b.factset_entity_id IS NOT NULL
+AND a.fsym_id = a.fsym_primary_equity_id
+ORDER BY b.factset_entity_id;
+
