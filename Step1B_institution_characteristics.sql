@@ -1,4 +1,19 @@
---Augment holdings table with institution origin
+/*This script calcualtes institution-level portfolio characteristics*/
+/*Variables include */
+    --1.Total and subportfolio AUM by investment destination, total and sub number of securities/firms by investment destination
+    --2.Country, region, global institution labels
+    --3. Home bias and country bias
+    --4. Active share
+    --5. Portfolio HHI
+    --6. Past 12-month return
+    --7. Churn ratio
+
+
+/*2024-03-17*/
+/*Lucie Lu: lucie.lu@unimelb.edu.au*/
+
+
+--#0. Augment holdings table with institution origin
 
 CREATE TABLE work.v1_holdingsall_aug AS
 SELECT a.quarter, a.factset_entity_id, a.fsym_id, dollarholding,
@@ -26,6 +41,8 @@ and c.iso_country=e.iso
 and d.iso_country=f.iso;
 
 
+/*#1A. AUM*/
+
 CREATE TABLE work.inst_aum AS
 SELECT factset_entity_id, quarter, inst_origin,
 sum(dollarholding) AS AUM,
@@ -37,6 +54,19 @@ sum(dollarholding*(1-is_dom)) AS AUM_for
 FROM work.v1_holdingsall_aug
 GROUP BY factset_entity_id, quarter, inst_origin;
 
+/*#1B. number of securities*/
+CREATE TABLE work.inst_nsecurities AS
+SELECT factset_entity_id, quarter, inst_origin,
+sum(1) AS n,
+sum(is_dom) AS n_dom,
+sum((1-is_dom)*is_dm) AS n_dm,
+sum((1-is_dom)*is_em) AS n_em,
+sum((1-is_dom)*is_fm) AS n_fm,
+sum((1-is_dom)) AS n_for
+FROM work.v1_holdingsall_aug
+GROUP BY factset_entity_id, quarter, inst_origin;
+
+/*#1C. Number of firms*/
 CREATE TABLE work.inst_nfirms AS
 SELECT a.factset_entity_id, quarter, inst_origin,
 sum(1) AS n,
@@ -48,6 +78,8 @@ sum((1-is_dom)) AS n_for
 FROM work.v1_holdingsall_aug a, work.principal_security b
 WHERE a.fsym_id=b.fsym_id
 GROUP BY a.factset_entity_id, quarter, inst_origin;
+
+/*#2. A classify institutions into country, regional and global institutions a la Bartram (2015)*/
 
 CREATE TABLE work.inst_country_weight AS
 SELECT
@@ -203,4 +235,98 @@ sum(isglobal*aum)/sum(aum) AS isglobalfundprop
 FROM work.inst_isglobal
 GROUP BY year
 ORDER BY year DESC;
+
+/*2B. Home bias*/
+
+CREATE TABLE work.mktcap_share(
+year integer,
+iso char(3),
+mv numeric,
+close numeric,
+weight numeric,
+weight_float numeric
+);
+
+COPY work.mktcap_share (year, iso, mv, close, weight, weight_float)
+FROM '/home/ubuntu/jmp/data/ctry_mktcap_weight.csv'
+DELIMITER ','
+CSV HEADER;
+
+/*Home bias*/
+
+CREATE TABLE work.inst_homebias AS
+SELECT a.factset_entity_id,a.quarter, a.year, inst_country,
+sum(ctry_weight*is_dom) AS homeweight,
+sum(ctry_weight*is_dom)-weight AS homebias,
+(sum(ctry_weight*is_dom)-weight)/(1-weight) AS homebias_norm,
+sum(ctry_weight*is_dom)-weight_float AS homebias_float,
+(sum(ctry_weight*is_dom)-weight_float)/(1-weight_float) AS homebias_floatnorm
+FROM work.inst_country_weight a,
+work.mktcap_share b,
+ctry c
+WHERE a.inst_country=c.iso
+AND c.iso3=b.iso
+AND a.year=b.year
+GROUP BY factset_entity_id, a.quarter, a.year, inst_country, weight, weight_float;
+
+/*2C. Bekaert and Wang normalized foreign bias, including normalized home bias*/
+
+CREATE TABLE work.inst_foreignbias AS
+SELECT a.factset_entity_id,a.quarter, a.year, inst_country, sec_country,
+CASE WHEN ctry_weight>weight THEN (ctry_weight-weight)/(1-weight)
+WHEN ctry_weight<weight THEN (ctry_weight-weight)/weight
+END AS foreign_bias
+FROM work.inst_country_weight a,
+work.mktcap_share b,
+ctry c
+WHERE a.sec_country=c.iso
+AND c.iso3=b.iso
+AND a.year=b.year;
+
+
+/*#3. Active share and HHI*/
+create table work.inst_totalmktcap as
+select a.factset_entity_id,a.quarter,
+sum(own_mktcap) as totalmktcap
+from work.v1_holdingsall a, work.sec_mktcap b
+where a.fsym_id=b.fsym_id
+and a.quarter=b.quarter
+and own_mktcap >= 0
+group by a.factset_entity_id, a.quarter;
+
+/*Institution portfolio weight*/
+
+CREATE TABLE work.inst_weight AS
+SELECT a.quarter, a.factset_entity_id, a.fsym_id,  a.dollarholding,
+		a.dollarholding/AUM AS weight,
+         own_mktcap/totalmktcap AS mktweight,
+         aum, adj_holding, a.adj_price,
+		inst_country, sec_country, e.entity_sub_type
+
+FROM work.v1_holdingsall_aug a, work.inst_aum b, work.inst_totalmktcap c, work.sec_mktcap d,
+factset.edm_standard_entity e
+WHERE  a.factset_entity_id=b.factset_entity_id
+AND a.quarter=b.quarter
+AND a.factset_entity_id=c.factset_entity_id
+AND a.quarter=c.quarter
+AND a.fsym_id=d.fsym_id
+AND a.quarter=d.quarter
+AND a.factset_entity_id=e.factset_entity_id;
+
+/*#3A. HHI index*/
+
+CREATE TABLE work.inst_hhi AS
+SELECT quarter, factset_entity_id, sum(weight*weight) AS hhi
+FROM work.inst_weight
+GROUP BY quarter, factset_entity_id;
+
+/*#3B. Active share*/
+
+CREATE TABLE work.inst_activeness AS
+SELECT  quarter,entity_sub_type, sum(abs(weight-mktweight))/2 AS activeshare,
+factset_entity_id, inst_country
+FROM work.inst_weight a
+GROUP BY quarter,factset_entity_id,entity_sub_type, inst_country;
+
+
 
