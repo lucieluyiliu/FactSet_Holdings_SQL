@@ -5,8 +5,8 @@
     --3. Home bias and country bias
     --4. Active share
     --5. Portfolio HHI
-    --6. Past 12-month return
-    --7. Churn ratio
+    --6. Churn ratio
+
 
 
 /*2024-03-17*/
@@ -328,5 +328,182 @@ factset_entity_id, inst_country
 FROM work.inst_weight a
 GROUP BY quarter,factset_entity_id,entity_sub_type, inst_country;
 
+
+
+/*#4C. Portfolio concentration institution-security level*/
+
+CREATE TABLE work.inst_concentration AS
+SELECT a.factset_entity_id, a.fsym_id, a.quarter, weight-avg_weight AS conc
+FROM work.inst_weight a,
+(SELECT factset_entity_id, quarter, avg(weight) AS avg_weight
+FROM work.inst_weight
+GROUP BY factset_entity_id, quarter)b
+WHERE a.factset_entity_id=b.factset_entity_id
+AND a.quarter=b.quarter;
+
+/*#5 Churn ratio*/
+
+CREATE TABLE work.inst_churn AS
+SELECT
+  a.quarter,
+  a.factset_entity_id,
+  a.fsym_id,
+  a.adj_holding AS nshares,
+  a.adj_price AS price,
+  b.adj_holding AS nshares_lag,
+  b.adj_price AS price_lag,
+  ABS((a.adj_holding - b.adj_holding) * a.adj_price) AS trade,
+  ABS((CASE WHEN a.adj_holding > b.adj_holding THEN a.adj_holding - b.adj_holding ELSE 0 END) * a.adj_price) AS trade_buy,
+  ABS((CASE WHEN a.adj_holding < b.adj_holding THEN a.adj_holding - b.adj_holding ELSE 0 END) * a.adj_price) AS trade_sell,
+  (a.adj_holding * a.adj_price + b.adj_holding * b.adj_price) / 2 AS aum
+FROM
+  work.v1_holdingsall a
+LEFT JOIN work.v1_holdingsall b ON
+  (a.factset_entity_id = b.factset_entity_id AND
+  a.fsym_id = b.fsym_id AND
+  a.quarter = quarter_add(b.quarter,1))  -- Assuming quarter is of a date type
+WHERE
+  b.adj_holding IS NOT NULL AND
+  b.adj_holding != 0 AND
+  b.adj_price IS NOT NULL
+ORDER BY
+  a.factset_entity_id, a.fsym_id, a.quarter;
+
+CREATE TABLE work.inst_churn_ratio AS
+SELECT
+  quarter,
+  factset_entity_id,
+  SUM(trade) / NULLIF(SUM(aum), 0) AS CR,
+  LEAST(
+    SUM(trade_buy) / NULLIF(SUM(aum), 0),
+    SUM(trade_sell) / NULLIF(SUM(aum), 0)
+  ) AS CR_adj
+FROM
+  work.inst_churn
+GROUP BY
+  quarter,
+  factset_entity_id;
+
+UPDATE work.inst_churn_ratio
+SET cr=2 WHERE cr>2;
+
+/*290 after factset updated 2023 Q4*/
+
+/*4-quarter moving average churn ratio*/
+
+CREATE TABLE work.inst_churn_ma AS
+SELECT
+  quarter,
+  factset_entity_id,
+  cr,
+  cr_adj,
+  AVG(cr) OVER (PARTITION BY factset_entity_id ORDER BY quarter ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS cr_ma,
+  AVG(cr_adj) OVER (PARTITION BY factset_entity_id ORDER BY quarter ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS cr_adj_ma
+FROM
+  work.inst_churn_ratio
+ORDER BY
+  factset_entity_id,
+  quarter;
+
+
+
+CREATE TABLE work.inst_characteristics AS
+SELECT a.factset_entity_id, a.quarter, a.aum,
+b.homebias, b.homebias_norm, b.homebias_float, b.homebias_floatnorm,
+c.activeshare, d.cr, d.cr_ma,
+d.cr_adj, d.cr_adj_ma,
+n, n_dom, n_for,
+hhi, isglobal
+FROM work.inst_aum a
+LEFT JOIN work.inst_homebias b
+ON (a.factset_entity_id=b.factset_entity_id AND a.quarter=b.quarter)
+LEFT JOIN work.inst_activeness c
+ON (a.factset_entity_id=c.factset_entity_id AND a.quarter=c.quarter)
+LEFT JOIN work.inst_churn_ma d
+ON (a.factset_entity_id=d.factset_entity_id
+AND a.quarter=d.quarter)
+LEFT JOIN work.inst_nsecurities e
+ON (a.factset_entity_id=e.factset_entity_id
+and a.quarter=e.quarter)
+LEFT JOIN work.inst_hhi f
+ON (a.factset_entity_id=f.factset_entity_id
+AND a.quarter=f.quarter)
+LEFT JOIN work.inst_isglobal g
+ON (a.factset_entity_id=g.factset_entity_id
+AND a.quarter=g.quarter);
+
+/*Before filtering, calculate the number of consecutive reports at each level*/
+
+/*Number of consecutive reports*/
+CREATE TABLE work.consecutive_inst AS
+WITH ranked_quarters AS (
+    SELECT
+        factset_entity_id,
+        quarter,
+        LAG(quarter) OVER (PARTITION BY factset_entity_id ORDER BY quarter) AS prev_quarter,
+        ROW_NUMBER() OVER (PARTITION BY factset_entity_id ORDER BY quarter) AS rn
+    FROM
+        work.inst_quarter
+),
+quarters_with_consec AS (
+    SELECT
+        factset_entity_id,
+        quarter,
+        prev_quarter,
+        rn,
+        CASE
+            WHEN quarter = quarter_add(prev_quarter , 1) THEN 1
+            WHEN rn = 1 THEN 1
+            ELSE 0
+        END AS is_consecutive
+    FROM ranked_quarters
+),
+discontinuity_flags AS (
+    SELECT
+        factset_entity_id,
+        quarter,
+        is_consecutive,
+        SUM(CASE WHEN is_consecutive = 0 THEN 1 ELSE 0 END) OVER (PARTITION BY factset_entity_id ORDER BY rn ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS discontinuity_group
+    FROM quarters_with_consec
+),
+consecutive_counts AS (
+    SELECT
+        factset_entity_id,
+        quarter,
+        ROW_NUMBER() OVER (PARTITION BY factset_entity_id, discontinuity_group ORDER BY quarter) AS consecutive_count
+    FROM discontinuity_flags
+    --WHERE is_consecutive = 1
+)
+
+SELECT * FROM consecutive_counts;
+
+/*Maximum consecutive reports per institution*/
+
+CREATE TABLE work.consecutive_inst_max AS
+SELECT factset_entity_id, max(consecutive_count) AS max_consecutive
+FROM work.consecutive_inst
+GROUP BY factset_entity_id
+order by max_consecutive;
+
+/*Pre-filter 583,801 instituion-year observation*/
+SELECT count(*) FROM work.inst_characteristics;
+
+CREATE TABLE work.inst_filtered AS
+SELECT a.factset_entity_id, quarter, aum, homebias, homebias_norm, homebias_float, homebias_floatnorm, activeshare, cr, cr_ma, cr_adj, cr_adj_ma, n, n_dom, n_for, hhi, isglobal,
+       b.entity_proper_name, iso_country, entity_type, entity_sub_type
+FROM work.inst_characteristics a,
+work.factset_entities b,
+work.consecutive_inst_max c
+WHERE a.factset_entity_id=b.factset_entity_id
+AND a.factset_entity_id=c.factset_entity_id
+/*filters*/
+AND activeshare IS NOT NULL
+AND n_dom>5
+AND n_for>5
+AND aum>10
+AND hhi<0.2
+AND max_consecutive >= 2;
+
+SELECT COUNT(*) from work.inst_filtered;
 
 
