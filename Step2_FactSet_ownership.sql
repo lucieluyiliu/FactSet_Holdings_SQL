@@ -107,7 +107,123 @@ SELECT  t1.company_id, t1.quarter, t1.factset_entity_id, t1.sec_country, t1.inst
 		t1.adjf,
 		t1.io
 
-from work.v2_holdingsall_firm  t1
-order by t1.company_id, t1.quarter, io desc;
+FROM work.v2_holdingsall_firm  t1
+ORDER BY t1.company_id, t1.quarter, io DESC;
+
+
+CREATE TABLE work.holdings_by_firm1 AS
+SELECT 	company_id,
+		quarter,
+		sec_country,
+		count(*) AS nbr_firms,
+		/*FM aggregation*/
+		/*dometsic io*/
+		sum(io) AS io,
+		sum(io*is_dom) AS io_dom,
+		sum(io*(1-is_dom)) AS io_for,
+
+        /*us*/
+        sum(io*is_us_inst) AS io_us,
+        sum(io*is_us_inst*(1-is_dom)) AS io_for_us,
+
+		/*uk*/
+		sum(io*is_uk_inst) AS io_uk,
+		sum(io*is_uk_inst*(1-is_dom)) AS io_for_uk,
+
+		/*eu*/
+		sum(io*is_eu_inst) AS io_eu,
+		sum(io*is_eu_inst*(1-is_dom)) AS io_for_eu,
+
+	    /*euro*/
+	    sum(io*is_euro_inst) AS io_euro,
+		sum(io*is_euro_inst*(1-is_dom)) AS io_for_euro,
+
+	    /*foreign others*/
+		sum(io*is_others_inst) AS io_others,
+		sum(io*is_others_inst*(1-is_dom)) AS io_for_others,
+
+		/*broker*/
+		sum(io*is_br) AS io_br,
+
+	    /*private banking*/
+		sum(io*is_pb) AS io_pb,
+
+		/*hedge fund*/
+		sum(io*is_hf) AS io_hf,
+
+		/*investment advisor*/
+        sum(io*is_ia) AS io_ia,
+
+        /*long-term*/
+        sum(io*is_lt) AS io_lt
+
+FROM v3_holdingsall
+GROUP BY company_id, quarter, sec_country;
+
+/*merge mktcap*/
+
+CREATE TABLE work.holdings_by_firm2 AS
+SELECT a.company_id, a.quarter, sec_country, nbr_firms, io, io_dom, io_for, io_us, io_for_us, io_uk, io_for_uk, io_eu, io_for_eu, io_euro, io_for_euro, io_others, io_for_others, io_br, io_pb, io_hf, io_ia, io_lt,
+       c.entity_proper_name,
+		b.mktcap_usd AS mktcap
+FROM work.holdings_by_firm1 a, work.hmktcap b, factset.edm_standard_entity c
+WHERE b.eoq = 1 AND a.company_id = b.factset_entity_id
+AND a.quarter = b.quarter
+AND a.company_id = c.factset_entity_id;
+
+/*Remove FEIT*/
+CREATE TABLE work.holdings_by_firm_all AS
+SELECT a.company_id as factset_entity_id, a.quarter,
+    (DATE_TRUNC('quarter', TO_DATE(a.quarter::text, 'YYYYQQ')) + INTERVAL '3 month' + INTERVAL '1 day' - INTERVAL '1 day')::date AS rquarter,
+    sec_country, entity_proper_name, nbr_firms, io, io_dom, io_for, io_us, io_for_us, io_uk, io_for_uk, io_eu, io_for_eu, io_euro, io_for_euro, io_others, io_for_others, io_br, io_pb, io_hf, io_ia, io_lt, mktcap
+FROM
+    work.holdings_by_firm2 a
+WHERE
+    a.company_id NOT IN (
+        SELECT factset_entity_id FROM factset.edm_standard_entity WHERE primary_sic_code = '6798'
+    )
+ORDER BY
+    a.company_id,
+    a.quarter;
+
+
+CREATE TABLE work.holdings_by_firm_ftse AS
+SELECT b.*
+FROM work.ctry a, work.holdings_by_firm_all b
+WHERE a.iso = b.sec_country;
+
+/*Annual firm-level ownership*/
+/*Keep last quarter of each year*/
+CREATE TABLE work.holdings_by_firm_annual AS
+WITH MaxQuarter AS (
+    SELECT
+        a.factset_entity_id,
+        (a.quarter / 100)::int AS year, -- Calculated year
+        MAX(a.quarter) AS maxqtr -- Maximum quarter for each year and factset_entity_id
+    FROM
+        work.holdings_by_firm_ftse a
+    GROUP BY
+        a.factset_entity_id,
+        (a.quarter / 100)::int
+)
+
+    SELECT
+    a.*,
+    CASE
+        WHEN b.iso = 'US' THEN 'US'
+        ELSE b.isem
+    END AS market,
+    (a.quarter / 100)::int AS year,
+    mq.maxqtr
+FROM
+    work.holdings_by_firm_ftse a
+JOIN
+    ctry b ON a.sec_country = b.iso
+JOIN
+    MaxQuarter mq ON a.factset_entity_id = mq.factset_entity_id AND (a.quarter / 100)::int = mq.year
+WHERE
+    a.quarter = mq.maxqtr -- keep max quarter
+ORDER BY
+    a.factset_entity_id, mq.year, mq.maxqtr;
 
 
