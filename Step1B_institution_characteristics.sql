@@ -1,11 +1,13 @@
 /*This script calcualtes institution-level portfolio characteristics*/
 /*Variables include */
-    --1.Total and subportfolio AUM by investment destination, total and sub number of securities/firms by investment destination
-    --2.Country, region, global institution labels
+    --1. Total and subportfolio AUM by investment destination, total and sub number of securities/firms by investment destination
+    --2. Country, region, global institution labels
     --3. Home bias and country bias
-    --4. Active share
-    --5. Portfolio HHI
-    --6. Churn ratio
+    --4. Portfolio HHI
+    --5. Active share
+    --6. Institution-security level portfolio concentration
+    --7. Churn ratio
+    --8. Institution-security level investment horizon
 
 
 
@@ -236,7 +238,7 @@ FROM work.inst_isglobal
 GROUP BY year
 ORDER BY year DESC;
 
-/*2B. Home bias*/
+/*3A. Home bias*/
 
 CREATE TABLE work.mktcap_share(
 year integer,
@@ -269,7 +271,7 @@ AND c.iso3=b.iso
 AND a.year=b.year
 GROUP BY factset_entity_id, a.quarter, a.year, inst_country, weight, weight_float;
 
-/*2C. Bekaert and Wang normalized foreign bias, including normalized home bias*/
+/*3B. Bekaert and Wang normalized foreign bias, including normalized home bias*/
 
 CREATE TABLE work.inst_foreignbias AS
 SELECT a.factset_entity_id,a.quarter, a.year, inst_country, sec_country,
@@ -284,7 +286,7 @@ AND c.iso3=b.iso
 AND a.year=b.year;
 
 
-/*#3. Active share and HHI*/
+/*Active share and HHI*/
 create table work.inst_totalmktcap as
 select a.factset_entity_id,a.quarter,
 sum(own_mktcap) as totalmktcap
@@ -313,14 +315,14 @@ AND a.fsym_id=d.fsym_id
 AND a.quarter=d.quarter
 AND a.factset_entity_id=e.factset_entity_id;
 
-/*#3A. HHI index*/
+/*#4. HHI index*/
 
 CREATE TABLE work.inst_hhi AS
 SELECT quarter, factset_entity_id, sum(weight*weight) AS hhi
 FROM work.inst_weight
 GROUP BY quarter, factset_entity_id;
 
-/*#3B. Active share*/
+/*5. Active share*/
 
 CREATE TABLE work.inst_activeness AS
 SELECT  quarter,entity_sub_type, sum(abs(weight-mktweight))/2 AS activeshare,
@@ -330,7 +332,7 @@ GROUP BY quarter,factset_entity_id,entity_sub_type, inst_country;
 
 
 
-/*#4C. Portfolio concentration institution-security level*/
+/*#6. Portfolio concentration institution-security level*/
 
 CREATE TABLE work.inst_concentration AS
 SELECT a.factset_entity_id, a.fsym_id, a.quarter, weight-avg_weight AS conc
@@ -341,7 +343,13 @@ GROUP BY factset_entity_id, quarter)b
 WHERE a.factset_entity_id=b.factset_entity_id
 AND a.quarter=b.quarter;
 
-/*#5 Churn ratio*/
+--75,605 securities
+SELECT COUNT(DISTINCT FSYM_ID) FROM WORK.INST_WEIGHT;
+
+SELECT COUNT(DISTINCT FACTSET_ENTITY_ID) FROM WORK.INST_WEIGHT;
+
+
+/*#7. Churn ratio*/
 
 CREATE TABLE work.inst_churn AS
 SELECT
@@ -434,6 +442,12 @@ AND a.quarter=g.quarter);
 
 /*Before filtering, calculate the number of consecutive reports at each level*/
 
+CREATE TABLE work.inst_quarter AS
+SELECT DISTINCT factset_entity_id, quarter
+FROM work.v1_holdingsall
+ORDER BY factset_entity_id, quarter;
+
+
 /*Number of consecutive reports*/
 CREATE TABLE work.consecutive_inst AS
 WITH ranked_quarters AS (
@@ -505,5 +519,54 @@ AND hhi<0.2
 AND max_consecutive >= 2;
 
 SELECT COUNT(*) from work.inst_filtered;
+
+/*#8 Investment horizon investor-security*/
+
+CREATE TABLE work.investment_horizon AS
+WITH ranked_quarters AS (
+    SELECT
+        factset_entity_id,
+        fsym_id,
+        quarter,
+        LAG(quarter) OVER (PARTITION BY factset_entity_id, fsym_id ORDER BY quarter) AS prev_quarter,
+        ROW_NUMBER() OVER (PARTITION BY factset_entity_id, fsym_id ORDER BY quarter) AS rn
+    FROM
+        work.v1_holdingsall
+),
+quarters_with_consec AS (
+    SELECT
+        factset_entity_id,
+        fsym_id,
+        quarter,
+        prev_quarter,
+        rn,
+        CASE
+            WHEN quarter = quarter_add(prev_quarter , 1) THEN 1
+            WHEN rn = 1 THEN 1
+            ELSE 0
+        END AS is_consecutive
+    FROM ranked_quarters
+),
+discontinuity_flags AS (
+    SELECT
+        factset_entity_id,
+        fsym_id,
+        quarter,
+        is_consecutive,
+        SUM(CASE WHEN is_consecutive = 0 THEN 1 ELSE 0 END) OVER (PARTITION BY factset_entity_id, fsym_id ORDER BY rn ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS discontinuity_group
+    FROM quarters_with_consec
+),
+consecutive_counts AS (
+    SELECT
+        factset_entity_id,
+        fsym_id,
+        quarter,
+        ROW_NUMBER() OVER (PARTITION BY factset_entity_id, fsym_id, discontinuity_group ORDER BY quarter) AS consecutive_count
+    FROM discontinuity_flags
+    --WHERE is_consecutive = 1
+)
+
+SELECT * FROM consecutive_counts;
+
 
 
