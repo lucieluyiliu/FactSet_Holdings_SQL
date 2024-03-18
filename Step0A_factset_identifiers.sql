@@ -86,3 +86,53 @@ AND b1.factset_entity_id=c1.factset_entity_id
 ORDER BY fsym_ID;
 
 
+/*Company identifiers after Step2*/
+
+CREATE TABLE work.principal_security AS
+SELECT a.fsym_id, currency, proper_name, fsym_primary_equity_id, fsym_primary_listing_id, active_flag, fref_security_type, fref_listing_exchange, listing_flag, regional_flag, security_flag, fsym_regional_id, fsym_security_id, universe_type,
+       b.factset_entity_id
+FROM factset.sym_coverage a
+LEFT JOIN factset.own_sec_entity_eq b ON a.fsym_id = b.fsym_id
+WHERE b.factset_entity_id IN (SELECT DISTINCT company_id FROM work.v2_holdingsall_firm)
+AND b.factset_entity_id IS NOT NULL
+AND a.fsym_id = a.fsym_primary_equity_id
+ORDER BY b.factset_entity_id;
+
+CREATE TABLE work.remaining_securities AS
+SELECT a.fsym_id, currency, proper_name, fsym_primary_equity_id, fsym_primary_listing_id, active_flag, fref_security_type, fref_listing_exchange, listing_flag, regional_flag, security_flag, fsym_regional_id, fsym_security_id, universe_type,
+       b.factset_entity_id
+FROM factset.sym_coverage a
+LEFT JOIN factset.own_sec_entity_eq b ON a.fsym_id = b.fsym_id
+WHERE b.factset_entity_id IN (SELECT DISTINCT company_id FROM work.v2_holdingsall_firm)
+AND b.factset_entity_id NOT IN (SELECT factset_entity_id FROM work.principal_security)
+AND b.factset_entity_id IS NOT NULL
+AND a.fref_security_type IN ('SHARE','PREFEQ')
+ORDER BY b.factset_entity_id, a.active_flag DESC, a.fref_security_type DESC;
+
+CREATE TABLE work.security_entity1 AS
+SELECT factset_entity_id, fsym_id FROM work.principal_security
+UNION ALL
+SELECT factset_entity_id, fsym_id FROM work.remaining_securities;
+
+CREATE TABLE work.security_entity AS
+SELECT a.*, b.fsym_primary_listing_id
+FROM security_entity1 a
+LEFT JOIN factset.sym_coverage b
+ON (a.fsym_id = b.fsym_id);
+
+
+CREATE TABLE work.entity_identifiers AS
+SELECT a.*,
+	   CASE
+	      WHEN b.isin IS NULL THEN c.isin
+		  ELSE b.isin
+	   END AS isin,
+	   d.cusip,
+	   e.sedol,
+	   f.ticker_region
+FROM security_entity a
+LEFT JOIN factset.sym_isin b ON a.fsym_id = b.fsym_id
+LEFT JOIN factset.sym_xc_isin c ON a.fsym_id = c.fsym_id
+LEFT JOIN factset.sym_cusip d ON a.fsym_id = d.fsym_id
+LEFT JOIN factset.sym_sedol e ON a.fsym_primary_listing_id = e.fsym_id
+LEFT JOIN factset.sym_ticker_region f ON a.fsym_primary_listing_id = f.fsym_id;

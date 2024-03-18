@@ -9,10 +9,8 @@
     --7. Churn ratio
     --8. Institution-security level investment horizon
 
-
-
 /*2024-03-17*/
-/*Lucie Lu: lucie.lu@unimelb.edu.au*/
+/*Author: Lucie Lu, lucie.lu@unimelb.edu.au*/
 
 
 --#0. Augment holdings table with institution origin

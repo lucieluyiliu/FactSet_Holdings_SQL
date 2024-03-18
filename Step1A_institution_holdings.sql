@@ -1,4 +1,13 @@
-/*This SQL script calculates security-level institutional ownership*/
+
+/*This SQL script calculates FactSet institution-level portfolio holdings*/
+/*Roll-forward mising report*/
+/*Aggregate 13F and fund level holdings to FactSet institution level*/
+
+/*It is adapted from the SAS code of Ferreria and Matos (2008), with the following amendments*/
+/*1. Add dollarholding based on quarterly IO and market cap*/
+/*2. Security-level holdings, ownership at security and firm level, V1 without applying adjustment factor, V2 applies adjustment factor*/
+
+/*Author: Lucie Lu, lucie.lu@unimelb.edu.au*/
 
 CREATE TABLE work.mic_exchange (
 iso text,
