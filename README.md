@@ -8,6 +8,10 @@ This repository contains PostgreSQL code that produces the same results as its c
 
 - Step0 compiles identifiers in FactSet for funds, institutions, companies and securities.
 
+- functions.sql includes helper functions
+
+- Auxiliaries2023.sql includes helper tables
+
 
 The data cleaning procedure follows the SAS code of Ferreria and Matos (2008, JFE):
 
