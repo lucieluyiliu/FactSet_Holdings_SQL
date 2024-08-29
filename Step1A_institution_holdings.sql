@@ -747,3 +747,6 @@ AND b.factset_entity_id IS NOT NULL
 AND a.fsym_id = a.fsym_primary_equity_id
 ORDER BY b.factset_entity_id;
 
+SELECT COUNT(*) FROM jmp.weeklydata;
+
+
