@@ -44,8 +44,6 @@ SET parent_name=b.entity_proper_name
 FROM factset.edm_standard_entity b
 WHERE a.fs_ultimate_parent_entity_id=b.factset_entity_id;
 
-SELECT count(*) from work.funds where parent_name is not null;
-
 CREATE TABLE work.factset_entities AS
 SELECT factset_entity_id, entity_proper_name, iso_country,
 entity_type, entity_sub_type

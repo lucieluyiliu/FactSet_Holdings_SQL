@@ -1,6 +1,6 @@
 
 /*This SQL script calculates FactSet institution-level portfolio holdings*/
-/*Roll-forward mising report*/
+/*Roll-forward missing report*/
 /*Aggregate 13F and fund level holdings to FactSet institution level*/
 
 /*It is adapted from the SAS code of Ferreria and Matos (2008), with the following amendments*/
@@ -27,7 +27,6 @@ SELECT fsym_ID, max(price_date) AS termination_date
 FROM factset.own_sec_prices_eq
 GROUP BY fsym_ID;
 
-select count(*) from work.termination;
 
 /* securities that are defined as Equity or ADR in ownership, or Preferred if defined as PREFEQ in sym_coverage;*/
 /*add exchange information to security table*/
@@ -62,9 +61,6 @@ UPDATE WORK.own_basic AS a
     WHERE a.factset_entity_id = b.dlc_entity_id
 	AND  exists (SELECT 1 FROM work.dlc b WHERE a.factset_entity_id = b.dlc_entity_id);
 
---Checked no duplicate
-
-select count(*) from work.own_basic;
 
 ALTER TABLE work.own_basic
 ADD COLUMN entity_proper_name TEXT;
@@ -107,8 +103,8 @@ JOIN
 ORDER BY
     a.fsym_id, month;
 
---21218612
-select count(*) from work.prices_historical;
+--21660641
+
 
 CREATE TABLE work.sec_mktcap AS
 SELECT
@@ -125,27 +121,25 @@ WHERE
     AND own_mktcap IS NOT NULL;
 
 
---7187379
+--7305157
 SELECT COUNT(*) from work.sec_mktcap;
 
 /*Firm-level market capitalization*/
 
-/*11,433,354*/
+/*11,633,175*/
 CREATE TABLE work.own_mktcap1 AS
 SELECT a.*,
 b.factset_entity_id, b.issue_type, b.fref_security_type,
 a.adj_price * a.adj_shares_outstanding/1000000 AS own_mv, islocal
 FROM factset.own_sec_prices_eq a, work.own_basic b
 WHERE a.fsym_ID = b.fsym_ID
-AND b.issue_type != 'AD';
+AND b.issue_type != 'AD' AND b.fref_security_type != 'TEMP';
 
--- exclude unilever ADR classified as "EQ";
-DELETE
-FROM work.own_mktcap1
-WHERE fsym_id='DXVFL5-S' and price_date >='2015-09-30';
+-- exclude unilever ADR classified as "EQ"; removed from latest Ferreira code
+-- DELETE
+-- FROM work.own_mktcap1
+-- WHERE fsym_id='DXVFL5-S' and price_date >='2015-09-30';
 
---11433307
-SELECT count(*) from work.own_mktcap1;
 
 
 /*Company level monthly MV*/
@@ -164,9 +158,6 @@ WHERE factset_entity_id IS NOT NULL
 GROUP BY factset_entity_id, price_date, month, quarter, eoq
 HAVING sum(own_mv) IS NOT NULL and sum(own_mv) > 0;
 
-SELECT COUNT(*) from work.hmktcap;
-
-
 
 /*---------------------------------*/
 /* #3 Start merging ownership data */
@@ -175,13 +166,13 @@ SELECT COUNT(*) from work.hmktcap;
 DO $$
 DECLARE
     sqtr INTEGER := 200001; -- Starting quarter
-    eqtr INTEGER; -- Variable to hold the calculated ending quarter
+    eqtr INTEGER := 202304; -- Variable to hold the calculated ending quarter
 BEGIN
     -- Calculate the ending quarter based on the maximum report_date
-    SELECT INTO eqtr
-        (DATE_PART('year', max(report_date)) * 100 + DATE_PART('quarter', max(report_date)))::int
-    FROM
-        factset.own_inst_13f_detail_eq;
+--     SELECT INTO eqtr
+--         (DATE_PART('year', max(report_date)) * 100 + DATE_PART('quarter', max(report_date)))::int
+--     FROM
+--         factset.own_inst_13f_detail_eq;
 
     -- Use the calculated sqtr and eqtr to filter and select necessary data into a new table
     CREATE TABLE work.own_inst_13f_detail AS
@@ -217,7 +208,7 @@ FROM  work.max13f a, work.own_inst_13f_detail b
 WHERE a.factset_entity_id = b.factset_entity_id
 AND   a.maxofdlr = b.report_date;
 
---106598632
+--108889491
 
 select count(*) from work.aux13f;
 
@@ -236,46 +227,25 @@ AND t1.month = t3.month
 AND t2.factset_entity_id=t4.factset_entity_id
 AND t1.month=t4.month;
 
-SELECT COUNT(*) FROM work.v0_holdings13f;  --91993400
+SELECT COUNT(*) FROM work.v0_holdings13f;  --93,796,337
 
-SELECT COUNT(*) FROM work.v0_holdings13f where adj_shares_outstanding =0;
+SELECT COUNT(*) FROM work.v0_holdings13f where adj_shares_outstanding =0;  --16143
 
---91944666, same as SAS
+--95396877, same as SAS
 DELETE FROM work.v0_holdings13f
 WHERE factset_entity_id in ('0FSVG4-E','000V4B-E')
 OR dollarholding > sec_mv;
 
---So far same as on Cedar
+--93757903
 
 /*mutual funds*/
 
-DO $$
-DECLARE
-    sqtr INTEGER := 200001; -- Starting quarter
-    eqtr INTEGER := 202304; -- Variable to hold the calculated ending quarter
-BEGIN
-
-    -- Use the calculated sqtr and eqtr to filter and select necessary data into a new table
-    CREATE TABLE work.own_fund_detail AS
-    SELECT
-        factset_fund_id,
-        fsym_id,
-        report_date,
-        (DATE_PART('year', report_date) * 100 + DATE_PART('quarter', report_date))::int AS quarter,
-        adj_holding
-    FROM
-        factset.own_fund_detail_eq
-    WHERE
-        (DATE_PART('year', report_date) * 100 + DATE_PART('quarter', report_date))::int BETWEEN sqtr AND eqtr;
-END $$;
-
-SELECT count(*) FROM factset.own_fund_detail_eq;
-
+select count(*) from work.own_fund_detail;
 
 --467944750, same as on WRDS
 
 
---2558868
+--2590564
 CREATE TABLE work.maxmf AS
 SELECT  factset_fund_id,
 		quarter,
@@ -327,7 +297,7 @@ OR sec_mv is null;
 DELETE FROM work.v0_holdingsmf
 WHERE  dollarholding > sec_mv;
 
-/*241942779, same as SAS*/
+/*244397475, same as SAS*/
 SELECT count(*) from work.v0_holdingsmf;
 
 /*Rolling forward past report*/
@@ -348,14 +318,10 @@ SELECT DISTINCT factset_entity_id
 FROM work.own_inst_13f_detail
 ORDER BY factset_entity_id;
 
-
-
 CREATE TABLE work.insts_13fdates as
 SELECT factset_entity_id, quarter
 FROM work.inst_13f, work.rangeofquarters
 ORDER BY factset_entity_id, quarter;
-
-
 
 CREATE TABLE work.pairs_13f AS
 SELECT DISTINCT factset_entity_id, quarter, 1
@@ -363,14 +329,13 @@ AS has_report
 FROM work.own_inst_13f_detail
 ORDER BY factset_entity_id, quarter;
 
+SELECT count(*) from work.pairs_13f;
 
 CREATE TABLE work.entity_minmax AS
 SELECT factset_entity_id, min(quarter)
 AS min_quarter, max(quarter) AS max_quarter
 FROM work.own_inst_13f_detail
 GROUP BY factset_entity_id;
-
-
 
 CREATE TABLE work.roll113f AS
 	SELECT a.*,
@@ -394,7 +359,7 @@ CREATE TABLE work.roll113f AS
     WHERE quarter < min_quarter
     OR quarter > max_quarter;
 
-select count(*) from work.roll113f;
+SELECT count(*) from work.roll113f;
 
 CREATE TABLE work.roll13f AS
 SELECT a.*,
@@ -408,14 +373,10 @@ FROM work.roll113f a
 JOIN work.pairs_13f b ON a.factset_entity_id = b.factset_entity_id AND b.quarter <= a.quarter
 ORDER BY a.factset_entity_id, a.quarter, b.quarter DESC;
 
-
+--Remove duplicates
 CREATE TABLE work.roll13f_sorted AS
 SELECT DISTINCT ON (factset_entity_id, quarter) *
 FROM work.roll13f;
-
-
-SELECT count(*) FROM
-(SELECT DISTINCT factset_entity_id, quarter FROM work.roll13f) AS a;
 
 CREATE TABLE work.fill_13f AS
 SELECT *
@@ -458,7 +419,7 @@ AND a.fsym_id=b.fsym_id;
 DELETE FROM work.v1_holdings13f
 WHERE dollarholding IS NULL OR dollarholding=0;
 
-
+SELECT count(*) from work.v1_holdings13f;
 
 CREATE TABLE work.v2_holdings13f AS
 	SELECT t2.factset_rollup_entity_id AS factset_entity_id, t1.fsym_id, t1.quarter, adj_price,
@@ -493,6 +454,8 @@ CREATE TABLE work.fund_minmax AS
 SELECT factset_fund_id, min(quarter) AS min_quarter, max(quarter) AS max_quarter
 FROM work.own_fund_detail
 GROUP BY factset_fund_id;
+
+--I stopped here
 
 CREATE TABLE work.roll1mf AS
 SELECT a.*,
