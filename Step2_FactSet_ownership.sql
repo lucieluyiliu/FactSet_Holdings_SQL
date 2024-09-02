@@ -64,23 +64,19 @@ SELECT  t1.company_id, t1.quarter, t1.factset_entity_id, t1.sec_country, t1.inst
 		   ELSE 0
 		END AS is_dom,
 		CASE
-		   WHEN t1.inst_origin = 'US' THEN 1
+		   WHEN t1.inst_country = 'US' THEN 1
 		   ELSE 0
 		END AS is_us_inst,
 		CASE
-		   WHEN t1.inst_origin = 'UK' THEN 1
+		   WHEN t1.inst_origin = 'North America' THEN 1
 		   ELSE 0
-		END AS is_uk_inst,
+		END AS is_na_inst,
 		CASE
 		   WHEN t1.inst_origin = 'Europe' THEN 1
 		   ELSE 0
 		END AS is_eu_inst,
 		CASE
-		   WHEN inst_country IN ('FR','DE','NL') THEN 1
-		   ELSE 0
-		END AS is_euro_inst,
-		CASE
-		   THEN t1.inst_origin = 'Others' THEN 1
+		   WHEN t1.inst_origin = 'Others' THEN 1
 		   ELSE 0
 		END AS is_others_inst,
 		CASE
@@ -127,16 +123,12 @@ SELECT 	company_id,
         sum(io*is_us_inst*(1-is_dom)) AS io_for_us,
 
 		/*uk*/
-		sum(io*is_uk_inst) AS io_uk,
-		sum(io*is_uk_inst*(1-is_dom)) AS io_for_uk,
+		sum(io*is_na_inst) AS io_na,
+		sum(io*is_na_inst*(1-is_dom)) AS io_for_na,
 
 		/*eu*/
 		sum(io*is_eu_inst) AS io_eu,
 		sum(io*is_eu_inst*(1-is_dom)) AS io_for_eu,
-
-	    /*euro*/
-	    sum(io*is_euro_inst) AS io_euro,
-		sum(io*is_euro_inst*(1-is_dom)) AS io_for_euro,
 
 	    /*foreign others*/
 		sum(io*is_others_inst) AS io_others,
@@ -157,13 +149,13 @@ SELECT 	company_id,
         /*long-term*/
         sum(io*is_lt) AS io_lt
 
-FROM v3_holdingsall
+FROM work.v3_holdingsall
 GROUP BY company_id, quarter, sec_country;
 
 /*merge mktcap*/
 
 CREATE TABLE work.holdings_by_firm2 AS
-SELECT a.company_id, a.quarter, sec_country, nbr_firms, io, io_dom, io_for, io_us, io_for_us, io_uk, io_for_uk, io_eu, io_for_eu, io_euro, io_for_euro, io_others, io_for_others, io_br, io_pb, io_hf, io_ia, io_lt,
+SELECT a.company_id, a.quarter, sec_country, nbr_firms, io, io_dom, io_for, io_us, io_for_us, io_na, io_for_na, io_eu, io_for_eu, io_others, io_for_others, io_br, io_pb, io_hf, io_ia, io_lt,
        c.entity_proper_name,
 		b.mktcap_usd AS mktcap
 FROM work.holdings_by_firm1 a, work.hmktcap b, factset.edm_standard_entity c
@@ -175,7 +167,7 @@ AND a.company_id = c.factset_entity_id;
 CREATE TABLE work.holdings_by_firm_all AS
 SELECT a.company_id as factset_entity_id, a.quarter,
     (DATE_TRUNC('quarter', TO_DATE(a.quarter::text, 'YYYYQQ')) + INTERVAL '3 month' + INTERVAL '1 day' - INTERVAL '1 day')::date AS rquarter,
-    sec_country, entity_proper_name, nbr_firms, io, io_dom, io_for, io_us, io_for_us, io_uk, io_for_uk, io_eu, io_for_eu, io_euro, io_for_euro, io_others, io_for_others, io_br, io_pb, io_hf, io_ia, io_lt, mktcap
+    sec_country, entity_proper_name, nbr_firms, io, io_dom, io_for, io_us, io_for_us, io_na, io_for_na, io_eu, io_for_eu, io_others, io_for_others, io_br, io_pb, io_hf, io_ia, io_lt, mktcap
 FROM
     work.holdings_by_firm2 a
 WHERE

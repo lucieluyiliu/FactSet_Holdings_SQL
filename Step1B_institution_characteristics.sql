@@ -120,36 +120,6 @@ on (a.factset_entity_id=b.factset_entity_id
     and a.region=b.region)
 WHERE b.factset_entity_id is null;
 
-SELECT * FROM work.inst_aum where factset_entity_id='001MJX-E' and quarter=200802;
-
-SELECT a.factset_entity_id, a.quarter, a.dollarholding, a.fsym_id, a.sec_country,  aum, c.region
-FROM work.v1_holdingsall_aug a,
-     work.inst_aum b,
-     work.ctry c
-WHERE a.factset_entity_id = '001MJX-E'
-  AND a.fsym_id='G6N1BW-S'
-  and a.quarter = 200802
-  AND a.factset_entity_id = b.factset_entity_id
-  AND a.quarter = b.quarter
-  AND a.sec_country = c.iso;
-
-GROUP BY a.factset_entity_id, a.quarter, aum,  region;
-
-
-SELECT DISTINCT region from(
-SELECT a.factset_entity_id, a.quarter, a.region_weight, a. region
-from jmp.inst_region_weight as a
-LEFT JOIN work.inst_region_weight as b
-on (a.factset_entity_id=b.factset_entity_id
-    and a.quarter=b.quarter
-    and a.region=b.region)
-WHERE b.factset_entity_id is null) as mismatch;
-
-SELECT count(*) from work.v1_holdingsall_aug;
-
-SELECT count(*) from work.ctry;
-
-SELECT count(*) from work.inst_aum;
 
 /*classify entity and funds by their scope, according to Bartram et al (2015)*/
 
@@ -220,7 +190,7 @@ SET inst_country=b.iso_country
 FROM factset.edm_standard_entity b
 WHERE a.factset_entity_id=b.factset_entity_id;
 
-SELECT * FROM work.inst_isglobal WHERE factset_entity_id='000BJX-E' order by quarter;
+--SELECT * FROM work.inst_isglobal WHERE factset_entity_id='000BJX-E' order by quarter;
 
 /*Check distribution of country, regional and global instituions in 2023*/
 
