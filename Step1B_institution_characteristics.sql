@@ -13,7 +13,7 @@
 /*Author: Lucie Lu, lucie.lu@unimelb.edu.au*/
 
 
---#0. Augment holdings table with institution origin
+--#0. Augment security holdings table with institution origin
 
 CREATE TABLE work.v1_holdingsall_aug AS
 SELECT a.quarter, a.factset_entity_id, a.fsym_id, dollarholding,
@@ -21,10 +21,9 @@ adj_holding, adj_price,
 c.iso_country AS sec_country,
 d.iso_country AS inst_country,
 e.isem,
-CASE WHEN d.iso_country='US' THEN 'US' /*These labels can change*/
-WHEN d.iso_country='GB' THEN 'UK' /*if GB then UK*/
-when f.region LIKE '%Europe%' then 'EU' /*Others go to EU*/
-else 'OT' end as inst_origin,
+CASE WHEN f.region='North America' THEN 'North America' /*These labels can change*/
+when f.region = 'Europe' then 'Europe' /*Others go to EU*/
+else 'Others' end as inst_origin,
 case when c.iso_country=d.iso_country then 1 else 0 end as is_dom,
 case when e.isem='DM' then 1 else 0 end as is_dm,
 case when e.isem='EM' then 1 else 0 end as is_em,
@@ -113,7 +112,44 @@ AND a.quarter=b.quarter
 AND a.sec_country=c.iso
 GROUP BY a.factset_entity_id, a.quarter, aum,  region;
 
-select count(*) from work.inst_region_weight;
+SELECT a.factset_entity_id, a.quarter, a.region_weight, a. region
+from jmp.inst_region_weight as a
+LEFT JOIN work.inst_region_weight as b
+on (a.factset_entity_id=b.factset_entity_id
+    and a.quarter=b.quarter
+    and a.region=b.region)
+WHERE b.factset_entity_id is null;
+
+SELECT * FROM work.inst_aum where factset_entity_id='001MJX-E' and quarter=200802;
+
+SELECT a.factset_entity_id, a.quarter, a.dollarholding, a.fsym_id, a.sec_country,  aum, c.region
+FROM work.v1_holdingsall_aug a,
+     work.inst_aum b,
+     work.ctry c
+WHERE a.factset_entity_id = '001MJX-E'
+  AND a.fsym_id='G6N1BW-S'
+  and a.quarter = 200802
+  AND a.factset_entity_id = b.factset_entity_id
+  AND a.quarter = b.quarter
+  AND a.sec_country = c.iso;
+
+GROUP BY a.factset_entity_id, a.quarter, aum,  region;
+
+
+SELECT DISTINCT region from(
+SELECT a.factset_entity_id, a.quarter, a.region_weight, a. region
+from jmp.inst_region_weight as a
+LEFT JOIN work.inst_region_weight as b
+on (a.factset_entity_id=b.factset_entity_id
+    and a.quarter=b.quarter
+    and a.region=b.region)
+WHERE b.factset_entity_id is null) as mismatch;
+
+SELECT count(*) from work.v1_holdingsall_aug;
+
+SELECT count(*) from work.ctry;
+
+SELECT count(*) from work.inst_aum;
 
 /*classify entity and funds by their scope, according to Bartram et al (2015)*/
 

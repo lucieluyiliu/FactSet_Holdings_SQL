@@ -95,7 +95,7 @@ insert into work.ctry VALUES
 ('NETHERLANDS','NL','NLD','Europe','DM'),
 ('NEW ZEALAND','NZ','NZL','Asia Pacific','DM'),
 ('NORWAY','NO','NOR','Europe','DM'),
-('PAKISTAN','PK','PAK','Asia Pacific','EM'),
+('PAKISTAN','PK','PAK','Middle East','EM'),
 ('PERU','PE','PER','Latin America','FM'),
 ('PHILIPPINES','PH','PHL','Asia Pacific','EM'),
 ('POLAND','PL','POL','Europe','EM'),
