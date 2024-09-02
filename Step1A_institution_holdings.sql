@@ -474,13 +474,9 @@ LEFT JOIN work.pairs_mf b ON a.factset_fund_id = b.factset_fund_id
 AND a.quarter = b.quarter
 INNER JOIN work.fund_minmax c ON a.factset_fund_id = c.factset_fund_id;
 
-
 DELETE FROM work.roll1mf
 WHERE quarter < min_quarter
 OR quarter > max_quarter;
-
-SELECT count(*) FROM work.roll1mf;
-
 
 CREATE TABLE work.rollmf AS
 SELECT a.*,
@@ -542,6 +538,8 @@ SELECT count(*) FROM work.v1_holdingsmf WHERE dollarholding is not NULL and doll
 DELETE FROM work.v1_holdingsmf
 WHERE dollarholding IS NULL OR dollarholding=0;
 
+SELECT count(*) from work.v1_holdingsmf;
+
 CREATE TABLE work.v2_holdingsmf as
 	select factset_inst_entity_id as factset_entity_id, fsym_ID, quarter, adj_price,
 	sum(adj_holding) as adj_holding,
@@ -554,6 +552,8 @@ CREATE TABLE work.v2_holdingsmf as
 	group by factset_entity_id, fsym_ID, quarter, adj_price;
 
 /*DELETE NULL AND ZERO HOLDINGS*/
+SELECT count(*) from work.v2_holdingsmf where dollarholding is not null and dollarholding !=0;
+
 
 DELETE FROM work.v2_holdings13f
 WHERE dollarholding is null or dollarholding=0;
@@ -662,9 +662,8 @@ SELECT  a.factset_entity_id, b.factset_entity_id AS company_id, a.quarter,
 		sum(a.io_firm) AS io, sum(dollarholding) AS dollarholding,
         cat_institution,
 		CASE
-	      WHEN c.iso_country = 'US' THEN 'US'
-		  WHEN c.iso_country = 'GB' THEN 'UK'
-		  WHEN f.region LIKE '%Europe%' AND d.iso_country != 'UK' THEN 'Europe'
+	      WHEN f.region = 'North American' THEN 'North America'
+		  WHEN f.region LIKE '%Europe%' THEN 'Europe'
 		  ELSE 'Others'
     END AS inst_origin
 FROM work.v1_holdingsall a, work.own_basic b,
@@ -678,7 +677,6 @@ AND   b.factset_entity_id = d.factset_entity_id
 AND   b.factset_entity_id IS NOT NULL
 AND a.io_firm IS NOT NULL
 AND c.entity_sub_type=e.entity_sub_type
-AND
 AND c.iso_country=f.iso
 GROUP BY a.factset_entity_id, b.factset_entity_id,
 a.quarter, c.iso_country, d.iso_country, c.entity_sub_type, cat_institution, inst_origin;
@@ -710,6 +708,5 @@ AND b.factset_entity_id IS NOT NULL
 AND a.fsym_id = a.fsym_primary_equity_id
 ORDER BY b.factset_entity_id;
 
-SELECT COUNT(*) FROM jmp.weeklydata;
 
 
