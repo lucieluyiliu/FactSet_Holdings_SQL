@@ -107,6 +107,7 @@ AND b.factset_entity_id IS NOT NULL
 AND a.fref_security_type IN ('SHARE','PREFEQ')
 ORDER BY b.factset_entity_id, a.active_flag DESC, a.fref_security_type DESC;
 
+
 CREATE TABLE work.security_entity1 AS
 SELECT factset_entity_id, fsym_id FROM work.principal_security
 UNION ALL

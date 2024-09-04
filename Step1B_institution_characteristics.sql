@@ -347,8 +347,9 @@ GROUP BY factset_entity_id, quarter)b
 WHERE a.factset_entity_id=b.factset_entity_id
 AND a.quarter=b.quarter;
 
---75,605 securities
+--75,664 securities
 SELECT COUNT(DISTINCT FSYM_ID) FROM WORK.INST_WEIGHT;
+
 
 SELECT COUNT(DISTINCT FACTSET_ENTITY_ID) FROM WORK.INST_WEIGHT;
 
@@ -399,7 +400,7 @@ GROUP BY
 UPDATE work.inst_churn_ratio
 SET cr=2 WHERE cr>2;
 
-/*290 after factset updated 2023 Q4*/
+/*196 after factset updated 2023 Q4*/
 
 /*4-quarter moving average churn ratio*/
 
@@ -503,7 +504,7 @@ FROM work.consecutive_inst
 GROUP BY factset_entity_id
 order by max_consecutive;
 
-/*Pre-filter 583,801 instituion-year observation*/
+/*Pre-filter 593,078 instituion-year observation*/
 SELECT count(*) FROM work.inst_characteristics;
 
 CREATE TABLE work.inst_filtered AS
