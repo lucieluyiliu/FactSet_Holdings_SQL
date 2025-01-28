@@ -23,6 +23,6 @@ The data cleaning procedure follows the SAS code of Ferreira and Matos (2008, JF
 
 Amendment to Ferreira and Matos:
 
-- Portfolio characteristics including AUM and number of securities across investment destinations (domestic, foreign DM, foreign EM) HHI, active share (Koijen et al 2023, RES), home bias (Bekaert and Wang, 2008), churn ratio (Stark et al 2023), investment horizon and portfolio concentration (Prado et al 2016, RFS)
+- Portfolio characteristics including AUM and number of securities across investment destinations (domestic, foreign DM, foreign EM) HHI, active share (Koijen et al 2023, ReStud), home bias (Bekaert and Wang, 2008), churn ratio (Stark et al 2023), investment horizon and portfolio concentration (Prado et al 2016, RFS)
 
 - Optional filters a la Camanho et al (2022)
